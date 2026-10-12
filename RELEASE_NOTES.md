@@ -1,4 +1,4 @@
-﻿# **2026.62.0**
+﻿# **2026.62.1**
 
 **Improvements**
 * The **Favs.** tab in profiles now shows the number of favorite worlds.
