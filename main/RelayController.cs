@@ -201,7 +201,7 @@ public class RelayController : IDisposable
                     {
                         // Fallback: direct exe path (user-configured)
                         var vrcExe = _core.Settings.VrcPath;
-                        if (!string.IsNullOrWhiteSpace(vrcExe) && File.Exists(vrcExe))
+                        if (!string.IsNullOrWhiteSpace(vrcExe) && File.Exists(vrcExe) && VRCNext.Services.Helpers.PathSafety.IsSafeVrcPath(vrcExe))
                         {
                             var llArgs = string.IsNullOrEmpty(joinUri2)
                                 ? $"{noVrFlag} {llProfileArg} {llExtraArgs}".Trim()
@@ -363,6 +363,9 @@ public class RelayController : IDisposable
         _vroCtrl.UpdateToolStates();
     }
 
+    private const string VcExeUrl    = "https://github.com/EllyVR/VRCVideoCacher/releases/download/2026.9.10/VRCVideoCacher.exe";
+    private const string VcExeSha256 = "662d339b9f543e5848875d0ffeb95eeb18232bc223d71d5d886a731c83a05e0f";
+
     private async Task InstallVcAsync()
     {
         try
@@ -372,45 +375,43 @@ public class RelayController : IDisposable
             using var http = new System.Net.Http.HttpClient();
             http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", AppInfo.UserAgent);
 
-            var apiResp = await http.GetAsync("https://api.github.com/repos/EllyVR/VRCVideoCacher/releases/latest");
-            if (!apiResp.IsSuccessStatusCode)
-            {
-                Invoke(() => _core.SendToJS("vcState", new { installed = false, running = false, error = $"GitHub API: HTTP {(int)apiResp.StatusCode}" }));
-                return;
-            }
-
-            var json     = JObject.Parse(await apiResp.Content.ReadAsStringAsync());
-            var version  = json["tag_name"]?.ToString() ?? "?";
-            var assets   = json["assets"] as JArray;
-            var exeAsset = assets?.FirstOrDefault(a => a["name"]?.ToString().EndsWith(".exe") == true);
-            var dlUrl    = exeAsset?["browser_download_url"]?.ToString();
-
-            if (string.IsNullOrEmpty(dlUrl))
-            {
-                Invoke(() => _core.SendToJS("vcState", new { installed = false, running = false, error = "No .exe asset in latest release" }));
-                return;
-            }
-
             Directory.CreateDirectory(Path.GetDirectoryName(VcExePath)!);
 
-            using var dlResp = await http.GetAsync(dlUrl, System.Net.Http.HttpCompletionOption.ResponseHeadersRead);
-            var total = dlResp.Content.Headers.ContentLength ?? -1L;
-            await using var stream = await dlResp.Content.ReadAsStreamAsync();
-            await using var fs     = File.Create(VcExePath);
-
-            var buf        = new byte[65536];
-            long downloaded = 0;
-            int  read;
-            while ((read = await stream.ReadAsync(buf)) > 0)
+            using var dlResp = await http.GetAsync(VcExeUrl, System.Net.Http.HttpCompletionOption.ResponseHeadersRead);
+            if (!dlResp.IsSuccessStatusCode)
             {
-                await fs.WriteAsync(buf.AsMemory(0, read));
-                downloaded += read;
-                if (total > 0)
+                Invoke(() => _core.SendToJS("vcState", new { installed = false, running = false, error = $"Download: HTTP {(int)dlResp.StatusCode}" }));
+                return;
+            }
+
+            var tmpPath = VcExePath + ".part";
+            var total = dlResp.Content.Headers.ContentLength ?? -1L;
+            await using (var stream = await dlResp.Content.ReadAsStreamAsync())
+            await using (var fs = File.Create(tmpPath))
+            {
+                var buf        = new byte[65536];
+                long downloaded = 0;
+                int  read;
+                while ((read = await stream.ReadAsync(buf)) > 0)
                 {
-                    int pct = (int)(downloaded * 100 / total);
-                    try { Invoke(() => _core.SendToJS("vcState", new { installed = false, running = false, downloading = true, progress = pct })); } catch { }
+                    await fs.WriteAsync(buf.AsMemory(0, read));
+                    downloaded += read;
+                    if (total > 0)
+                    {
+                        int pct = (int)(downloaded * 100 / total);
+                        try { Invoke(() => _core.SendToJS("vcState", new { installed = false, running = false, downloading = true, progress = pct })); } catch { }
+                    }
                 }
             }
+
+            if (!VRCNext.Services.Helpers.PathSafety.Sha256Matches(tmpPath, VcExeSha256))
+            {
+                try { File.Delete(tmpPath); } catch { }
+                Invoke(() => _core.SendToJS("vcState", new { installed = false, running = false, error = "Download: checksum mismatch" }));
+                return;
+            }
+
+            File.Move(tmpPath, VcExePath, overwrite: true);
 
             Invoke(() =>
             {
@@ -456,6 +457,12 @@ public class RelayController : IDisposable
             if (!File.Exists(path))
             {
                 _core.SendToJS("log", new { msg = $"Startup app not found: {path}", color = "warn" });
+                continue;
+            }
+
+            if (!VRCNext.Services.Helpers.PathSafety.IsSafeStartupApp(path))
+            {
+                _core.SendToJS("log", new { msg = $"Rejected startup app (only local .exe files are allowed): {path}", color = "warn" });
                 continue;
             }
 

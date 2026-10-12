@@ -477,6 +477,7 @@ public partial class AppShell
                 case "ready":
                     // Signal platform to JS (hides Windows-only tabs on Linux)
                     SendToJS("setPlatform", new { isLinux = !OperatingSystem.IsWindows() });
+                    SendToJS("localHttpInfo", new { port = _core.HttpPort, token = _core.HttpCorsToken });
                     _windowCtrl.InstallChrome();
                     _windowCtrl.RestoreMaximizedState();
                     // Debug: show what Load() did
@@ -500,12 +501,7 @@ public partial class AppShell
                     _stCtrl.ResendState();
                     _fsCtrl.ResendState();
                     FlushPendingDeepLink();
-                    // Check for crash report from previous session — show modal after UI is ready
-                    _ = Task.Run(async () =>
-                    {
-                        await Task.Delay(1200);
-                        CheckAndShowPendingCrash();
-                    });
+                    Services.CrashHandler.ClearPendingCrash();
                     break;
 
                 case "getGameLog":
@@ -587,8 +583,6 @@ public partial class AppShell
                     break;
 
                 case "vrcnPlusCheckEntitlement":
-                case "vrcnPlusGetTheme":
-                case "vrcnPlusSaveTheme":
                     await _vrcnPlusCtrl.HandleMessage(action, msg);
                     break;
 
@@ -1031,23 +1025,6 @@ public partial class AppShell
                             SendToJS("consoleOutput", new { text = string.Join("\n", lines), color = "info" });
                         });
                     }
-                    else if (result.Extra == "vrcnPlusAdmin" && result.ExtraPayload != null)
-                    {
-                        var payload  = JObject.FromObject(result.ExtraPayload);
-                        var sub      = payload["sub"]?.ToString() ?? "";
-                        var targetId = payload["targetId"]?.ToString() ?? "";
-                        _ = Task.Run(async () =>
-                        {
-                            var caller = _core.VrcApi.CurrentUserId;
-                            if (string.IsNullOrEmpty(caller))
-                            {
-                                SendToJS("consoleOutput", new { text = "[VRCN+] not logged in", color = "err" });
-                                return;
-                            }
-                            var (cmdOk, text) = await _vrcnPlusCtrl.RunAdminCommandAsync(sub, caller, targetId);
-                            SendToJS("consoleOutput", new { text, color = cmdOk ? "ok" : "err" });
-                        });
-                    }
                     else if (result.Extra != null && result.ExtraPayload != null)
                         SendToJS(result.Extra, result.ExtraPayload);
                     break;
@@ -1078,7 +1055,6 @@ public partial class AppShell
                 case "vrcGetFriendPreview":
                 case "vrcGetUserBasic":
                 case "vrcGetInstanceCounts":
-                case "commentsApi":
                     await _friends.HandleMessage(action, msg);
                     break;
 
@@ -4086,10 +4062,7 @@ public partial class AppShell
                 {
                     var newPath = msg["path"]?.ToString() ?? "";
                     var newArgs = (msg["args"]?.ToString() ?? "").Trim();
-                    // Validate path override the way VRCX-0 does (must end in launch.exe if .exe).
-                    if (!string.IsNullOrEmpty(newPath) && newPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-                        && !newPath.EndsWith("launch.exe", StringComparison.OrdinalIgnoreCase)
-                        && !newPath.EndsWith("VRChat.exe", StringComparison.OrdinalIgnoreCase))
+                    if (!VRCNext.Services.Helpers.PathSafety.IsSafeVrcPath(newPath))
                     {
                         SendToJS("toast", new { ok = false, msg = "Invalid VRChat path (must end with launch.exe or VRChat.exe)" });
                         break;
@@ -4148,13 +4121,6 @@ public partial class AppShell
                     await _vroCtrl.HandleMessage(action, msg);
                     break;
 
-                // Crash report modal
-                case "sendCrashReport":
-                    _ = SendPendingCrashReportAsync();
-                    break;
-                case "dismissCrashReport":
-                    Services.CrashHandler.ClearPendingCrash();
-                    break;
 
                 case "trayNotification":
 #if WINDOWS

@@ -99,6 +99,7 @@ public class CoreLibrary
     public Dictionary<string, PerminiEntry> PerminiList { get; } = new();
     public DateTime DiscordJoinedAt { get; set; } = DateTime.MinValue;
     public int HttpPort { get; set; }
+    public string HttpCorsToken { get; set; } = "";
     public string CustomThemesDir { get; set; } = "";
 
     private readonly HashSet<string> _dashBgAllowed = new(StringComparer.OrdinalIgnoreCase);

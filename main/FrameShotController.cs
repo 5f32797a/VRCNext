@@ -206,6 +206,9 @@ public class FrameShotController : IDisposable
     };
 
 #if WINDOWS
+    private const string FfmpegZipUrl    = "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip";
+    private const string FfmpegZipSha256 = "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba";
+
     private async Task InstallFfmpegAsync()
     {
         _ffmpegInstalling = true;
@@ -220,7 +223,7 @@ public class FrameShotController : IDisposable
             http.Timeout = TimeSpan.FromMinutes(10);
 
             using var resp = await http.GetAsync(
-                "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+                FfmpegZipUrl,
                 System.Net.Http.HttpCompletionOption.ResponseHeadersRead);
             if (!resp.IsSuccessStatusCode)
             {
@@ -250,6 +253,13 @@ public class FrameShotController : IDisposable
                         }
                     }
                 }
+            }
+
+            if (!VRCNext.Services.Helpers.PathSafety.Sha256Matches(tmpZip, FfmpegZipSha256))
+            {
+                try { File.Delete(tmpZip); } catch { }
+                _core.SendToJS("fsFfmpegState", new { installed = false, error = "Download: checksum mismatch" });
+                return;
             }
 
             _core.SendToJS("fsFfmpegState", new { installed = false, downloading = true, progress = 100, installing = true });

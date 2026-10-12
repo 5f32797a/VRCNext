@@ -212,7 +212,6 @@ public class AuthController
                 _core.Settings.AvtrdbReportDeleted = msg["avtrdbReport"]?.Value<bool>() ?? _core.Settings.AvtrdbReportDeleted;
                 _core.Settings.AvtrIcuSubmitAvatars = msg["icuSubmit"]?.Value<bool>() ?? _core.Settings.AvtrIcuSubmitAvatars;
                 _core.Settings.AvtrIcuReportDeleted = msg["icuReport"]?.Value<bool>() ?? _core.Settings.AvtrIcuReportDeleted;
-                _core.Settings.CommentsOnWorldsEnabled = msg["comments"]?.Value<bool>() ?? _core.Settings.CommentsOnWorldsEnabled;
                 _core.Settings.VrcndbConsentShown  = true;
                 _core.Settings.Save();
                 break;
@@ -224,7 +223,7 @@ public class AuthController
             case "setupReady":
                 _core.SendToJS("setPlatform", new { isLinux = !OperatingSystem.IsWindows() });
                 var detectedPath = _core.Settings.VrcPath;
-                if (string.IsNullOrWhiteSpace(detectedPath) || !File.Exists(detectedPath))
+                if (string.IsNullOrWhiteSpace(detectedPath) || !File.Exists(detectedPath) || !PathSafety.IsSafeVrcPath(detectedPath))
                     detectedPath = DetectVrcLaunchExe();
                 if (!string.IsNullOrEmpty(detectedPath) && detectedPath != _core.Settings.VrcPath)
                 {
@@ -420,14 +419,22 @@ public class AuthController
                 break;
 
             case "setupSaveVrcPath":
-                _core.Settings.VrcPath = msg["path"]?.ToString() ?? "";
-                _core.Settings.Save();
+                {
+                    var setupVrcPath = msg["path"]?.ToString() ?? "";
+                    if (PathSafety.IsSafeVrcPath(setupVrcPath))
+                    {
+                        _core.Settings.VrcPath = setupVrcPath;
+                        _core.Settings.Save();
+                    }
+                    else _core.SendToJS("log", new { msg = $"Rejected VRChat path: {setupVrcPath}", color = "warn" });
+                }
                 break;
 
             case "setupSavePhotoDir":
                 var setupPhotoDir = msg["path"]?.ToString() ?? "";
                 if (!string.IsNullOrEmpty(setupPhotoDir)
                     && Directory.Exists(setupPhotoDir)
+                    && PathSafety.IsSafeWatchFolder(setupPhotoDir)
                     && !_core.Settings.WatchFolders.Contains(setupPhotoDir, StringComparer.OrdinalIgnoreCase))
                 {
                     _core.Settings.WatchFolders.Add(setupPhotoDir);
@@ -511,15 +518,19 @@ public class AuthController
             case "browseExe":
                 {
                     var target = msg["target"]?.ToString() ?? "extra";
-                    // VRChat path picker stays exe-only; startup-app pickers also accept
-                    // shortcuts (.lnk) and launch scripts (.bat/.cmd).
 #if WINDOWS
-                    var r = target == "vrchat" ? Dialog.FileOpen("exe") : Dialog.FileOpen("exe,lnk,bat,cmd");
+                    var r = Dialog.FileOpen("exe");
 #else
                     var r = Dialog.FileOpen();
 #endif
                     if (r.IsOk)
                     {
+                        bool pickOk = target == "vrchat" ? PathSafety.IsSafeVrcPath(r.Path) : PathSafety.IsSafeStartupApp(r.Path);
+                        if (!pickOk)
+                        {
+                            _core.SendToJS("log", new { msg = $"Rejected file: {r.Path}", color = "warn" });
+                            break;
+                        }
                         _core.SendToJS("exeAdded", new { target, path = r.Path });
                         if (target == "vrchat")
                         {
@@ -1959,7 +1970,9 @@ public class AuthController
         {
             _core.Settings.BotName = data["botName"]?.ToString() ?? "VRCNext";
             _core.Settings.BotAvatarUrl = data["botAvatar"]?.ToString() ?? "";
-            _core.Settings.VrcPath = data["vrcPath"]?.ToString() ?? "";
+            var newVrcPath = data["vrcPath"]?.ToString() ?? "";
+            if (PathSafety.IsSafeVrcPath(newVrcPath)) _core.Settings.VrcPath = newVrcPath;
+            else _core.SendToJS("log", new { msg = $"Rejected VRChat path: {newVrcPath}", color = "warn" });
             _core.Settings.AutoStart = data["autoStart"]?.Value<bool>() ?? false;
             _core.Settings.StartWithWindows = data["startWithWindows"]?.Value<bool>() ?? false;
             ApplyStartWithWindows(_core.Settings.StartWithWindows);
@@ -1985,7 +1998,6 @@ public class AuthController
             _core.Settings.FriendsSidebarPreviewOpen = data["friendsSidebarPreviewOpen"]?.Value<bool>() ?? false;
             _core.Settings.SeparateFavoriteFriends = data["separateFavoriteFriends"]?.Value<bool>() ?? false;
             _core.Settings.PeopleAlwaysStats = data["peopleAlwaysStats"]?.Value<bool>() ?? false;
-            _core.Settings.CommentsOnWorldsEnabled = data["commentsOnWorldsEnabled"]?.Value<bool>() ?? true;
             _core.Settings.ModernFolderLayout = data["modernFolderLayout"]?.Value<bool>() ?? true;
             _core.Settings.NavSidebarHoverText = data["navSidebarHoverText"]?.Value<bool>() ?? true;
             _core.Settings.EnableVrcPlusDecorations = data["enableVrcPlusDecorations"]?.Value<bool>() ?? false;
@@ -2082,18 +2094,25 @@ public class AuthController
             }
 
             var folders = data["folders"]?.ToObject<List<string>>();
-            if (folders != null) _core.Settings.WatchFolders = folders;
+            if (folders != null)
+            {
+                var safeFolders = PathSafety.FilterWatchFolders(folders);
+                foreach (var f in folders.Except(safeFolders))
+                    _core.SendToJS("log", new { msg = $"Rejected watch folder (drive root or network path): {f}", color = "warn" });
+                _core.Settings.WatchFolders = safeFolders;
+            }
 
             var relayEnabledFoldersToken = data["relayEnabledFolders"];
             if (relayEnabledFoldersToken != null)
                 _core.Settings.RelayEnabledFolders = relayEnabledFoldersToken.ToObject<List<string>>();
 
             var extraExe = data["extraExe"]?.ToObject<List<string>>();
-            if (extraExe != null) _core.Settings.ExtraExe = extraExe;
+            if (extraExe != null) _core.Settings.ExtraExe = PathSafety.FilterStartupApps(extraExe);
 
             var extraExeDesktop = data["extraExeDesktop"]?.ToObject<List<string>>();
             if (extraExeDesktop != null)
             {
+                extraExeDesktop = FilterStartupAppsLogged(extraExeDesktop);
                 bool desktopChanged = !_core.Settings.ExtraExeDesktop.SequenceEqual(extraExeDesktop);
                 _core.Settings.ExtraExeDesktop = extraExeDesktop;
                 if (desktopChanged) AutoStartShortcutHelper.Sync(extraExeDesktop, vr: false);
@@ -2102,6 +2121,7 @@ public class AuthController
             var extraExeVR = data["extraExeVR"]?.ToObject<List<string>>();
             if (extraExeVR != null)
             {
+                extraExeVR = FilterStartupAppsLogged(extraExeVR);
                 bool vrChanged = !_core.Settings.ExtraExeVR.SequenceEqual(extraExeVR);
                 _core.Settings.ExtraExeVR = extraExeVR;
                 if (vrChanged) AutoStartShortcutHelper.Sync(extraExeVR, vr: true);
@@ -2324,8 +2344,6 @@ public class AuthController
             // Auto-Update
             _core.Settings.AutoUpdate = data["autoUpdate"]?.Value<bool>() ?? true;
 
-            // Crash Reporting
-            _core.Settings.SendCrashData       = data["sendCrashData"]?.Value<bool>()       ?? true;
             _core.Settings.RestartAfterCrash   = data["restartAfterCrash"]?.Value<bool>()   ?? true;
 
             // Text Tools
@@ -2480,6 +2498,14 @@ public class AuthController
         }
         else if (File.Exists(file)) File.Delete(file);
 #endif
+    }
+
+    private List<string> FilterStartupAppsLogged(List<string> apps)
+    {
+        var safe = PathSafety.FilterStartupApps(apps);
+        foreach (var a in apps.Except(safe))
+            _core.SendToJS("log", new { msg = $"Rejected startup app (only local .exe files are allowed): {a}", color = "warn" });
+        return safe;
     }
 
     // VRC Path Detection

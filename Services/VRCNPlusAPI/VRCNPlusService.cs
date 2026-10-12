@@ -6,7 +6,7 @@ namespace VRCNext.Services.VRCNPlusAPI;
 
 public class VRCNPlusService : IDisposable
 {
-    public const string ApiBase = "https://vrcn.shinyflvres.com/api/api.php";
+    public const string ApiBase = "https://db.vrcnext.com/api/vrcnplus.php";
     private static readonly TimeSpan CacheFreshness = TimeSpan.FromMinutes(15);
 
     private readonly SqliteConnection _db;
@@ -27,63 +27,12 @@ public class VRCNPlusService : IDisposable
     {
         using var cmd = _db.CreateCommand();
         cmd.CommandText = @"
-            CREATE TABLE IF NOT EXISTS profile_themes (
-                user_id     TEXT PRIMARY KEY,
-                colors_json TEXT NOT NULL,
-                updated_at  TEXT NOT NULL,
-                fetched_at  TEXT NOT NULL
-            );
+            DROP TABLE IF EXISTS profile_themes;
             CREATE TABLE IF NOT EXISTS entitlement_cache (
                 user_id     TEXT PRIMARY KEY,
                 is_plus     INTEGER NOT NULL,
                 checked_at  TEXT NOT NULL
             );";
-        cmd.ExecuteNonQuery();
-    }
-
-    public JObject? GetLocalTheme(string userId)
-    {
-        using var cmd = _db.CreateCommand();
-        cmd.CommandText = "SELECT colors_json, updated_at, fetched_at FROM profile_themes WHERE user_id = $id";
-        cmd.Parameters.AddWithValue("$id", userId);
-        using var r = cmd.ExecuteReader();
-        if (!r.Read()) return null;
-        try
-        {
-            var colors = JObject.Parse(r.GetString(0));
-            return new JObject
-            {
-                ["userId"]    = userId,
-                ["colors"]    = colors,
-                ["updatedAt"] = r.GetString(1),
-                ["fetchedAt"] = r.GetString(2),
-            };
-        }
-        catch { return null; }
-    }
-
-    private void UpsertLocalTheme(string userId, JObject colors, string updatedAt)
-    {
-        using var cmd = _db.CreateCommand();
-        cmd.CommandText = @"
-            INSERT INTO profile_themes (user_id, colors_json, updated_at, fetched_at)
-            VALUES ($id, $json, $upd, $fetched)
-            ON CONFLICT(user_id) DO UPDATE SET
-                colors_json = excluded.colors_json,
-                updated_at  = excluded.updated_at,
-                fetched_at  = excluded.fetched_at";
-        cmd.Parameters.AddWithValue("$id", userId);
-        cmd.Parameters.AddWithValue("$json", colors.ToString(Formatting.None));
-        cmd.Parameters.AddWithValue("$upd", string.IsNullOrEmpty(updatedAt) ? DateTime.UtcNow.ToString("o") : updatedAt);
-        cmd.Parameters.AddWithValue("$fetched", DateTime.UtcNow.ToString("o"));
-        cmd.ExecuteNonQuery();
-    }
-
-    private void DeleteLocalTheme(string userId)
-    {
-        using var cmd = _db.CreateCommand();
-        cmd.CommandText = "DELETE FROM profile_themes WHERE user_id = $id";
-        cmd.Parameters.AddWithValue("$id", userId);
         cmd.ExecuteNonQuery();
     }
 
@@ -129,105 +78,6 @@ public class VRCNPlusService : IDisposable
         up.Parameters.AddWithValue("$t", DateTime.UtcNow.ToString("o"));
         up.ExecuteNonQuery();
         return isPlus;
-    }
-
-    public async Task<(JObject? theme, bool? isPlus)> FetchRemoteThemeAsync(string userId)
-    {
-        try
-        {
-            var url  = $"{ApiBase}?action=getTheme&userId={Uri.EscapeDataString(userId)}";
-            var resp = await _http.GetAsync(url);
-            if (!resp.IsSuccessStatusCode) return (null, null);
-            var body = JObject.Parse(await resp.Content.ReadAsStringAsync());
-            if (body["ok"]?.Value<bool>() != true) return (null, null);
-
-            bool? isPlus = body["isPlus"]?.Type == JTokenType.Boolean ? body["isPlus"]!.Value<bool>() : (bool?)null;
-
-            var theme = body["theme"] as JObject;
-            if (theme == null)
-            {
-                DeleteLocalTheme(userId);
-                return (new JObject { ["userId"] = userId, ["colors"] = null }, isPlus);
-            }
-            var colors    = theme["colors"] as JObject ?? new JObject();
-            var updatedAt = theme["updatedAt"]?.ToString() ?? DateTime.UtcNow.ToString("o");
-            UpsertLocalTheme(userId, colors, updatedAt);
-            return (new JObject
-            {
-                ["userId"]    = userId,
-                ["colors"]    = colors,
-                ["updatedAt"] = updatedAt,
-            }, isPlus);
-        }
-        catch { return (null, null); }
-    }
-
-    public async Task<(bool ok, string? error, JObject? theme)> SaveRemoteThemeAsync(string userId, JObject colors)
-    {
-        try
-        {
-            var url     = $"{ApiBase}?action=saveTheme&userId={Uri.EscapeDataString(userId)}";
-            var payload = new JObject { ["colors"] = colors }.ToString(Formatting.None);
-            var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
-            var resp    = await _http.PostAsync(url, content);
-            var raw     = await resp.Content.ReadAsStringAsync();
-            JObject? body = null;
-            try { body = JObject.Parse(raw); }
-            catch { return (false, $"HTTP {(int)resp.StatusCode}: server returned non-JSON ({raw.Length}b): {raw.Substring(0, Math.Min(200, raw.Length))}", null); }
-            if (body["ok"]?.Value<bool>() != true)
-                return (false, body["error"]?.ToString() ?? $"HTTP {(int)resp.StatusCode}", null);
-
-            var theme    = body["theme"] as JObject ?? new JObject { ["colors"] = colors };
-            var cleaned  = theme["colors"] as JObject ?? colors;
-            UpsertLocalTheme(userId, cleaned, DateTime.UtcNow.ToString("o"));
-            return (true, null, new JObject
-            {
-                ["userId"]    = userId,
-                ["colors"]    = cleaned,
-                ["updatedAt"] = DateTime.UtcNow.ToString("o"),
-            });
-        }
-        catch (Exception e) { return (false, e.Message, null); }
-    }
-
-    public async Task<(bool ok, string? error, bool? isPlus)> AdminCallAsync(string action, string callerUserId, string targetUserId, string? note = null)
-    {
-        try
-        {
-            var url     = $"{ApiBase}?action={Uri.EscapeDataString(action)}&userId={Uri.EscapeDataString(targetUserId)}";
-            var payload = new JObject {
-                ["callerUserId"] = callerUserId,
-                ["adminToken"]   = BuildSecrets.VrcnPlusAdminToken,
-            };
-            if (!string.IsNullOrEmpty(note)) payload["note"] = note;
-            var content = new StringContent(payload.ToString(Formatting.None), System.Text.Encoding.UTF8, "application/json");
-            var resp    = await _http.PostAsync(url, content);
-            var raw     = await resp.Content.ReadAsStringAsync();
-            JObject? body = null;
-            try { body = JObject.Parse(raw); }
-            catch { return (false, $"HTTP {(int)resp.StatusCode}: non-JSON response: {raw.Substring(0, Math.Min(200, raw.Length))}", null); }
-            if (body["ok"]?.Value<bool>() != true)
-                return (false, body["error"]?.ToString() ?? $"HTTP {(int)resp.StatusCode}", null);
-            bool? isPlus = body["isPlus"]?.Type == JTokenType.Boolean ? body["isPlus"]!.Value<bool>() : (bool?)null;
-            return (true, null, isPlus);
-        }
-        catch (Exception e) { return (false, e.Message, null); }
-    }
-
-    public async Task<(bool ok, string? error)> DeleteRemoteThemeAsync(string userId)
-    {
-        try
-        {
-            var url     = $"{ApiBase}?action=deleteTheme&userId={Uri.EscapeDataString(userId)}";
-            var content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
-            var resp    = await _http.PostAsync(url, content);
-            var body    = JObject.Parse(await resp.Content.ReadAsStringAsync());
-            if (body["ok"]?.Value<bool>() != true)
-                return (false, body["error"]?.ToString() ?? $"HTTP {(int)resp.StatusCode}");
-            DeleteLocalTheme(userId);
-            return (true, null);
-        }
-        catch (Exception e) { return (false, e.Message); }
     }
 
     public void Dispose()

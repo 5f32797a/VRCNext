@@ -658,7 +658,6 @@ public class AppSettings
     public bool VrcndbConsentShown { get; set; }
     public bool VrcndbSyncLikes { get; set; } = true;
     public bool VrcndbSyncWears { get; set; } = true;
-    public bool CommentsOnWorldsEnabled { get; set; } = true;
 
     // Discord Rich Presence — privacy per status
     public bool DpHideInstIdJoinMe  { get; set; }
@@ -732,8 +731,6 @@ public class AppSettings
     // Auto-Update on startup
     public bool AutoUpdate { get; set; } = true;
 
-    // Crash Reporting, send anonymous stack traces to the developer via Discord webhook
-    public bool SendCrashData { get; set; } = false;
     // Restart after crash. We do ignore task manager kills here!
     public bool RestartAfterCrash { get; set; } = true;
 
@@ -895,6 +892,9 @@ public class AppSettings
                 s.VrcPassword        = Unprotect(s.VrcPasswordEnc);
                 s.VrcAuthCookie      = Unprotect(s.VrcAuthCookieEnc);
                 s.VrcTwoFactorCookie = Unprotect(s.VrcTwoFactorCookieEnc);
+
+                if (!Helpers.PathSafety.IsSafeVrcPath(s.VrcPath)) s.VrcPath = "";
+                s.WatchFolders = Helpers.PathSafety.FilterWatchFolders(s.WatchFolders);
 
                 return s;
             }

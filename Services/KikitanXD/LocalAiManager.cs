@@ -7,6 +7,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using VRCNext.Services.Helpers;
 
 namespace VRCNext.Services.KikitanXD;
 
@@ -170,6 +171,9 @@ public sealed class LocalAiManager
                 }
             }
 
+            if (item.Sha256.Length > 0 && !PathSafety.Sha256Matches(tmp, item.Sha256))
+                throw new InvalidDataException("checksum mismatch");
+
             if (item.IsArchive)
             {
                 try { OnProgress?.Invoke(id, 100, total, total); } catch { }
@@ -238,6 +242,9 @@ public sealed class LocalAiManager
                     }
                 }
             }
+
+            if (item.ExtraSha256.Length > 0 && !PathSafety.Sha256Matches(tmp, item.ExtraSha256))
+                throw new InvalidDataException("extra checksum mismatch");
 
             int written = 0;
             using (var zip = ZipFile.OpenRead(tmp))

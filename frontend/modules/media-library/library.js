@@ -1164,7 +1164,7 @@ function toggleHidden(p) {
 async function setLibItemAsDashBg(path, url) {
     if (path.toLowerCase().endsWith('.mp4') && url) {
         try {
-            const resp = await fetch(url, { method: 'HEAD' });
+            const resp = await fetch(localCorsUrl(url), { method: 'HEAD' });
             const size = parseInt(resp.headers.get('content-length') || '0');
             if (size > 60 * 1024 * 1024) {
                 showToast(false, t('library.bg_video_too_large', 'Video must be under 60 MB'));

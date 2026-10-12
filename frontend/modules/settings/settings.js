@@ -129,7 +129,6 @@ function saveSettings() {
             friendsSidebarPreviewOpen: document.getElementById('setFriendsSidebarPreviewOpen')?.checked ?? false,
             separateFavoriteFriends: document.getElementById('setSeparateFavoriteFriends')?.checked ?? false,
             peopleAlwaysStats: document.getElementById('setPeopleAlwaysStats')?.checked ?? false,
-            commentsOnWorldsEnabled: document.getElementById('setCommentsOnWorlds')?.checked ?? true,
             modernFolderLayout: document.getElementById('setModernFolderLayout')?.checked ?? true,
             navSidebarHoverText: document.getElementById('setNavSidebarHoverText')?.checked ?? true,
             enableVrcPlusDecorations: document.getElementById('setVrcPlusDecorations')?.checked ?? false,
@@ -325,7 +324,6 @@ function saveSettings() {
             dbOptimize: document.getElementById('setDbOptimize').checked,
             dbOptimizeMaxEntries: Math.max(500, Math.min(250000, parseInt(document.getElementById('setDbOptimizeMaxEntries').value) || 500)),
             autoUpdate: document.getElementById('setAutoUpdate').checked,
-            sendCrashData: document.getElementById('setSendCrashData').checked,
             restartAfterCrash: document.getElementById('setRestartAfterCrash').checked,
             rememberWindowSize:     document.getElementById('setRememberWindowSize')?.checked     ?? false,
             rememberWindowPosition: document.getElementById('setRememberWindowPosition')?.checked ?? false,
@@ -418,7 +416,7 @@ function initAutoSave() {
         'setYtAutoStartVR','setYtAutoStartDesktop',
         'setVfAutoStartVR','setVfAutoStartDesktop',
         'setDpAutoStartVR','setDpAutoStartDesktop',
-        'setImgCacheEnabled','setImgCacheLimit','setImgCacheOptimizeEnabled','setImgMemoryOptimizeEnabled','setVrcPlusOptimize','setMemoryTrimEnabled','setSendCrashData','setRestartAfterCrash',
+        'setImgCacheEnabled','setImgCacheLimit','setImgCacheOptimizeEnabled','setImgMemoryOptimizeEnabled','setVrcPlusOptimize','setMemoryTrimEnabled','setRestartAfterCrash',
         'setPerfGpuAccel','setPerfShaderCache','setPerfV8Heap','setPerfRenderProc',
         'setPerfAnimations','setPerfBlur'];
     ids.forEach(id => {
@@ -525,10 +523,6 @@ function loadSettingsToUI(s) {
     const _pasEl = document.getElementById('setPeopleAlwaysStats');
     if (_pasEl) _pasEl.checked = settings.peopleAlwaysStats;
     if (typeof applyPeopleAlwaysStats === 'function') applyPeopleAlwaysStats();
-    settings.commentsOnWorldsEnabled = s.CommentsOnWorldsEnabled ?? s.commentsOnWorldsEnabled ?? true;
-    const _cowEl = document.getElementById('setCommentsOnWorlds');
-    if (_cowEl) _cowEl.checked = settings.commentsOnWorldsEnabled;
-    if (typeof applyWorldCommentsEnabled === 'function') applyWorldCommentsEnabled();
     settings.modernFolderLayout = s.ModernFolderLayout ?? s.modernFolderLayout ?? true;
     const _mflEl = document.getElementById('setModernFolderLayout');
     if (_mflEl) _mflEl.checked = settings.modernFolderLayout;
@@ -1078,7 +1072,6 @@ function loadSettingsToUI(s) {
 
     // Crash Reporting
     document.getElementById('setAutoUpdate').checked          = s.AutoUpdate          ?? s.autoUpdate          ?? true;
-    document.getElementById('setSendCrashData').checked      = s.SendCrashData      ?? s.sendCrashData      ?? false;
     document.getElementById('setRestartAfterCrash').checked  = s.RestartAfterCrash  ?? s.restartAfterCrash  ?? true;
 
     // Window Behavior
@@ -1573,7 +1566,6 @@ const _VRCNDB_CONSENT_GROUPS = [
         ['setAvtrIcuSubmit', 'icuSubmit'], ['setAvtrIcuReport', 'icuReport'],
     ] },
     { id: 'vrcndbConsentSync', first: false, members: [['setVrcndbSyncLikes', 'syncLikes'], ['setVrcndbSyncWears', 'syncWears']] },
-    { id: 'vrcndbConsentComments', first: true, members: [['setCommentsOnWorlds', 'comments']] },
 ];
 let _vrcndbConsentInitial = {};
 let _vrcndbConsentFirstRun = false;
@@ -1607,9 +1599,6 @@ function showVrcndbConsent(firstRun) {
         ${row('vrcndbConsentSync',
             t('settings.vrcndb.consent.sync_toggle', 'Sync favorite likes and worn avatars to VRCNDb'),
             t('settings.vrcndb.consent.sync_desc', 'When enabled, your favorited avatars count as a like and the avatars you wear count as worn on VRCNDb. This is anonymous and helps show which avatars are popular.'))}
-        ${row('vrcndbConsentComments',
-            t('settings.vrcndb.consent.section_comments', 'World Comments'),
-            t('settings.vrcndb.consent.comments_desc', 'Show comments in world modals. If you do not want to see user comments, disable this.'))}
         <div class="modal-btns" style="margin-top:22px;">
             <button class="vrcn-button-round vrcn-btn-accent" onclick="confirmVrcndbConsent()">${esc(t('settings.vrcndb.consent.confirm', 'Got it'))}</button>
         </div>
@@ -1628,9 +1617,7 @@ function confirmVrcndbConsent() {
             if (el) el.checked = val;
         });
     });
-    if (typeof msg.comments === 'boolean' && typeof settings !== 'undefined') settings.commentsOnWorldsEnabled = msg.comments;
     sendToCS(msg);
-    if (typeof applyWorldCommentsEnabled === 'function') applyWorldCommentsEnabled();
     const m = document.getElementById('vrcndbConsentModal');
     if (m) m.remove();
 }

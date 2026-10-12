@@ -162,7 +162,6 @@ public sealed class AvtrdbResolver
             Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json")
         };
         Log?.Invoke($"[AVTRDB] QRY resolve x{_lastBatchSize}");
-        VRCNext.Services.Helpers.AvtrdbSpamGuard.RecordQuery();
         var resp = await client.SendAsync(req);
         var text = await resp.Content.ReadAsStringAsync();
 

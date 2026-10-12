@@ -139,6 +139,7 @@ let currentFontSizeOffset = 0;
 let currentTaskbarHeight = 42;
 let _systemFonts = [];
 let _localHttpPort = 0;
+let _localHttpToken = '';
 let _cursorFiles = [];
 let _customThemes = [];
 let _activeCustomThemes = new Set();
@@ -1462,7 +1463,7 @@ function applyAutoColor() {
             applyColors(_buildAutoTheme(domHue, accentHue, accentLit, avgSat));
         } catch (e) { console.warn('[AutoColor]', e); }
     };
-    img.src = url;
+    img.src = localCorsUrl(url);
 }
 
 function renderSpecialThemeChips() {
@@ -2349,6 +2350,11 @@ function esc(s) {
 
 function jsq(s) {
     return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r/g, '\\r').replace(/\n/g, '\\n');
+}
+
+function localCorsUrl(url) {
+    if (!url || !_localHttpToken || !/^http:\/\/localhost:\d+\//i.test(url)) return url;
+    return url + (url.indexOf('?') === -1 ? '?' : '&') + 'vt=' + _localHttpToken;
 }
 
 function cssUrl(s) {

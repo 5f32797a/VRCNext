@@ -162,7 +162,7 @@ function mediaUploadToIcons(url, name)  { mediaLibUploadFlow('icons',  url, name
 // Flattens GIFs to their first frame, matching VRChat's static icon/photo uploads.
 function iuLoadFromUrl(url, name) {
     iuClearError();
-    fetch(url)
+    fetch(localCorsUrl(url))
         .then(resp => { if (!resp.ok) throw new Error('fetch failed'); return resp.blob(); })
         .then(srcBlob => {
             const objUrl = URL.createObjectURL(srcBlob);

@@ -70,6 +70,7 @@ window.external.receiveMessage(rawMsg => {
             case 'ttsDevices':
                 if (typeof vroPopulateTtsDevices === 'function') vroPopulateTtsDevices(payload || {});
                 break;
+            case 'localHttpInfo': _localHttpPort = payload.port || _localHttpPort; _localHttpToken = payload.token || _localHttpToken; break;
             case 'cursorFiles': _localHttpPort = payload.port || _localHttpPort; renderCursorThemeChips(payload.files); applyCursorTheme(currentCursorTheme); break;
             case 'customThemes': _localHttpPort = payload.port || _localHttpPort; _customThemes = payload.themes || []; applyCustomThemesFromSettings([..._activeCustomThemes]); break;
             case 'vrcLaunched': {
@@ -190,7 +191,6 @@ window.external.receiveMessage(rawMsg => {
             case 'vrcLaunchOptionsData':
                 if (typeof _vrcLaApplyData === 'function') _vrcLaApplyData(payload || {});
                 break;
-            case 'showCrashModal': showCrashModal(payload); break;
             case 'wsStatus': {
                 const badge = document.getElementById('wsBadge');
                 if (badge) {
@@ -420,10 +420,6 @@ window.external.receiveMessage(rawMsg => {
                 if (typeof handleUserBasic === 'function') handleUserBasic(payload);
                 if (typeof pinsOnUserBasic === 'function') pinsOnUserBasic(payload);
                 if (typeof tlOnCreatorResolved === 'function') tlOnCreatorResolved(payload);
-                if (typeof commentsOnUserBasic === 'function') commentsOnUserBasic(payload);
-                break;
-            case 'commentsApiResult':
-                if (typeof commentsApiResult === 'function') commentsApiResult(payload);
                 break;
             case 'vrcAvatarByFileId': handleAvatarByFileId(payload); break;
             case 'vrcAvatarInfo':
@@ -1436,31 +1432,3 @@ case 'vrcNews':
 // backend's loadSettings response to arrive before init.js runs, and init.js's
 // renderWebhookCards([{},{},{},{}]) would overwrite the loaded webhook data.
 
-// Crash Report Modal
-
-function showCrashModal(payload) {
-    const CRASH_MODAL_ENABLED = false;
-    if (!CRASH_MODAL_ENABLED) return;
-    const preview = document.getElementById('crashLogPreview');
-    if (preview) {
-        preview.innerHTML = '';
-        const lines = (payload.preview || '').split('\n');
-        lines.forEach(line => {
-            const row = document.createElement('div');
-            row.className = 'li-f';
-            const msg = document.createElement('span');
-            msg.className = 'li-msg';
-            // Style section header lines differently
-            if (line.startsWith('═══') || line.startsWith('───')) {
-                msg.style.color = 'var(--tx3)';
-                msg.style.fontWeight = '600';
-            } else if (line.trim().startsWith('at ') || line.trim().startsWith('Type') || line.trim().startsWith('Message')) {
-                msg.style.color = 'var(--err)';
-            }
-            msg.textContent = line || '\u00a0';
-            row.appendChild(msg);
-            preview.appendChild(row);
-        });
-    }
-    document.getElementById('modalCrash').style.display = '';
-}

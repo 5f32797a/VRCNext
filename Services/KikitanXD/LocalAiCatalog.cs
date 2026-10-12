@@ -16,7 +16,9 @@ public sealed record LocalAiItem(
     string ArchivePrefix = "",
     string ExtraUrl = "",
     string ExtraPrefix = "",
-    string ExtraFile = "");
+    string ExtraFile = "",
+    string Sha256 = "",
+    string ExtraSha256 = "");
 
 public static class LocalAiCatalog
 {
@@ -79,13 +81,15 @@ public static class LocalAiCatalog
             "Only needed if you do not use a GPU runtime, or as a fallback if the GPU one fails to load.",
             18_482_556,
             Nuget + $"whisper.net.runtime/{WhisperRuntimeVersion}/whisper.net.runtime.{WhisperRuntimeVersion}.nupkg",
-            CoreDir + "/whisper/runtimes/win-x64", true, "build/win-x64/"),
+            CoreDir + "/whisper/runtimes/win-x64", true, "build/win-x64/",
+            Sha256: "b5224f0dad44d5eb8233e5d83f4333a8a3fccadc77095f50f361f06d65e0736b"),
 
         new("rt-whisper-vulkan", LocalAiKind.Runtime, "Whisper Runtime (GPU, Vulkan)",
             "Runs speech recognition on the graphics card using the normal display driver. No CUDA Toolkit needed, works on NVIDIA, AMD and Intel. Recommended GPU option.",
             36_867_136,
             Nuget + $"whisper.net.runtime.vulkan/{WhisperRuntimeVersion}/whisper.net.runtime.vulkan.{WhisperRuntimeVersion}.nupkg",
-            CoreDir + "/whisper/runtimes/vulkan/win-x64", true, "build/win-x64/"),
+            CoreDir + "/whisper/runtimes/vulkan/win-x64", true, "build/win-x64/",
+            Sha256: "25fbea771d8aaffc4588a1d6aa1345a7bbc74912a8ada895d1695bbacfc1135a"),
 
         new("rt-llama-vulkan", LocalAiKind.Runtime, "Translation Runtime (GPU, Vulkan)",
             "Runs the translation model on the graphics card using the normal display driver. No CUDA Toolkit needed. Recommended GPU option.",
@@ -93,13 +97,16 @@ public static class LocalAiCatalog
             Nuget + $"llamasharp.backend.vulkan.windows/{LlamaRuntimeVersion}/llamasharp.backend.vulkan.windows.{LlamaRuntimeVersion}.nupkg",
             CoreDir + "/llama/vulkan", true, "LLamaSharpRuntimes/win-x64/native/",
             Nuget + $"llamasharp.backend.cpu/{LlamaRuntimeVersion}/llamasharp.backend.cpu.{LlamaRuntimeVersion}.nupkg",
-            "LLamaSharpRuntimes/win-x64/native/avx2/", "ggml-cpu.dll"),
+            "LLamaSharpRuntimes/win-x64/native/avx2/", "ggml-cpu.dll",
+            "0fe18b028a3348d53d69a4375733f19e7246bd6a8f5eda18bec93cd555485285",
+            "5a3416a712c2fe9a4a70f8915f8a7e5b82948f5c74a517a2c3ee29158204bb26"),
 
         new("rt-llama-cpu", LocalAiKind.Runtime, "Translation Runtime (CPU)",
             "Only needed if you do not use a GPU runtime, or as a fallback if the GPU one fails to load.",
             36_337_071,
             Nuget + $"llamasharp.backend.cpu/{LlamaRuntimeVersion}/llamasharp.backend.cpu.{LlamaRuntimeVersion}.nupkg",
-            CoreDir + "/llama/cpu", true, "LLamaSharpRuntimes/win-x64/native/"),
+            CoreDir + "/llama/cpu", true, "LLamaSharpRuntimes/win-x64/native/",
+            Sha256: "5a3416a712c2fe9a4a70f8915f8a7e5b82948f5c74a517a2c3ee29158204bb26"),
     };
 
     public static readonly IReadOnlyList<string> ObsoleteDirs = new List<string>
