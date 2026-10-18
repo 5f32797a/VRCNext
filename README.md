@@ -87,8 +87,10 @@ The launcher does not modify any game files and does not provide any way to hack
 <details>
 <summary><b>Is there any ban risk when I use this?</b></summary>
 
-No. VRCNext follows VRChat's Community Guidelines and Terms of Service.
-Since it is only a launcher with group and friends management plus some additional tools, there should be no ban risk.
+Not really, VRCNext tries to follow VRChat's Community Guidelines and Terms of Service.
+Since it is only a launcher with group and friends management plus some additional tools.
+However nothing is fully risk-free. Abusing their API with spam, or malicious behavior could result
+in moderation. You're responsible for how you use Third Party tools
 
 It is essentially VRChat.com presented in its own interface.
 
