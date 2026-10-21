@@ -1,8 +1,9 @@
-﻿let currentLanguage = 'en';
+let currentLanguage = 'en';
 let i18nBundle = {};
 
 const UI_LANGUAGES = {
     en: { label: 'English', flag: '\uD83C\uDDFA\uD83C\uDDF8', locale: 'en-US' },
+    th: { label: '\u0E44\u0E17\u0E22', flag: '\uD83C\uDDF9\uD83C\uDDED', locale: 'th-TH-u-ca-gregory' },
     de: { label: 'Deutsch', flag: '\uD83C\uDDE9\uD83C\uDDEA', locale: 'de-DE' },
     es: { label: 'Espa\u00F1ol', flag: '\uD83C\uDDEA\uD83C\uDDF8', locale: 'es-ES' },
     fr: { label: 'Fran\u00E7ais', flag: '\uD83C\uDDEB\uD83C\uDDF7', locale: 'fr-FR' },

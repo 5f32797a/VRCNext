@@ -52,6 +52,7 @@ function applySetupTranslations() {
 
 var SETUP_LANGUAGES = [
     { key: 'en',    flag: '\uD83C\uDDFA\uD83C\uDDF8', label: 'English' },
+    { key: 'th',    flag: '\uD83C\uDDF9\uD83C\uDDED', label: '\u0E44\u0E17\u0E22' },
     { key: 'de',    flag: '\uD83C\uDDE9\uD83C\uDDEA', label: 'Deutsch' },
     { key: 'fr',    flag: '\uD83C\uDDEB\uD83C\uDDF7', label: 'Fran\u00E7ais' },
     { key: 'es',    flag: '\uD83C\uDDEA\uD83C\uDDF8', label: 'Espa\u00F1ol' },

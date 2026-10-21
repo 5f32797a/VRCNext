@@ -2427,6 +2427,7 @@ public class AuthController
     {
         return (language ?? string.Empty).Trim().ToLowerInvariant() switch
         {
+            "th" => "th",
             "de" => "de",
             "es" => "es",
             "fr" => "fr",

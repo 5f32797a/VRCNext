@@ -1,4 +1,4 @@
-﻿#if WINDOWS
+#if WINDOWS
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -326,58 +326,58 @@ namespace VRCNext.Services
                 ["en"] = "SYSTEM TIME",    ["de"] = "SYSTEMZEIT",
                 ["es"] = "HORA SISTEMA",   ["fr"] = "HEURE SYSTÈME",
                 ["ja"] = "システム時刻",     ["zh-cn"] = "系统时间",
-                ["zh-tw"] = "系統時間",
+                ["zh-tw"] = "系統時間",     ["th"] = "เวลาเครื่อง",
             },
             ["water_reminder"] = new() {
                 ["en"] = "WATER REMINDER", ["de"] = "WASSERALARM",
                 ["es"] = "RECORDATORIO",   ["fr"] = "RAPPEL D'EAU",
                 ["ja"] = "水分補給",         ["zh-cn"] = "喝水提醒",
-                ["zh-tw"] = "喝水提醒",
+                ["zh-tw"] = "喝水提醒",     ["th"] = "เตือนดื่มน้ำ",
             },
             ["active"] = new() {
                 ["en"] = "ACTIVE",  ["de"] = "AKTIV",  ["es"] = "ACTIVO",
                 ["fr"] = "ACTIF",   ["ja"] = "有効",    ["zh-cn"] = "活跃",
-                ["zh-tw"] = "活躍",
+                ["zh-tw"] = "活躍",   ["th"] = "เปิดใช้งาน",
             },
             ["min"] = new() {
                 ["en"] = "MIN", ["de"] = "MIN", ["es"] = "MIN",
                 ["fr"] = "MIN", ["ja"] = "分",  ["zh-cn"] = "分",
-                ["zh-tw"] = "分",
+                ["zh-tw"] = "分", ["th"] = "นาที",
             },
             ["sec"] = new() {
                 ["en"] = "SEC", ["de"] = "SEK", ["es"] = "SEG",
                 ["fr"] = "SEC", ["ja"] = "秒",  ["zh-cn"] = "秒",
-                ["zh-tw"] = "秒",
+                ["zh-tw"] = "秒", ["th"] = "วินาที",
             },
             ["recent_notifications"] = new() {
                 ["en"] = "RECENT NOTIFICATIONS", ["de"] = "BENACHRICHTIGUNGEN",
                 ["es"] = "NOTIFICACIONES",        ["fr"] = "NOTIFICATIONS",
                 ["ja"] = "最近の通知",              ["zh-cn"] = "最近通知",
-                ["zh-tw"] = "最近通知",
+                ["zh-tw"] = "最近通知",              ["th"] = "การแจ้งเตือนล่าสุด",
             },
             ["no_notifications"] = new() {
                 ["en"] = "No recent notifications", ["de"] = "Keine Benachrichtigungen",
                 ["es"] = "Sin notificaciones",       ["fr"] = "Pas de notifications",
                 ["ja"] = "通知なし",                   ["zh-cn"] = "暂无通知",
-                ["zh-tw"] = "暫無通知",
+                ["zh-tw"] = "暫無通知",               ["th"] = "ไม่มีการแจ้งเตือนล่าสุด",
             },
             ["alarm_title"] = new() {
                 ["en"] = "Drink Water!",     ["de"] = "Trink Wasser!",
                 ["es"] = "¡Bebe Agua!",      ["fr"] = "Buvez de l'eau !",
                 ["ja"] = "水を飲もう！",       ["zh-cn"] = "喝水啦！",
-                ["zh-tw"] = "喝水啦！",
+                ["zh-tw"] = "喝水啦！",        ["th"] = "ดื่มน้ำด้วยนะ!",
             },
             ["alarm_sub"] = new() {
                 ["en"] = "Stay hydrated. Stay focused.",  ["de"] = "Trink genug. Bleib fokussiert.",
                 ["es"] = "Mantente hidratado.",            ["fr"] = "Restez hydraté.",
                 ["ja"] = "水分補給を忘れずに。",             ["zh-cn"] = "保持水分，保持专注。",
-                ["zh-tw"] = "保持水分，保持專注。",
+                ["zh-tw"] = "保持水分，保持專注。",          ["th"] = "อย่าลืมดื่มน้ำ รักษาสุขภาพด้วย",
             },
             ["alarm_btn"] = new() {
                 ["en"] = "I Did Drink!",    ["de"] = "Ich hab getrunken!",
                 ["es"] = "¡Ya bebí!",       ["fr"] = "J'ai bu !",
                 ["ja"] = "飲んだよ！",        ["zh-cn"] = "我喝了！",
-                ["zh-tw"] = "我喝了！",
+                ["zh-tw"] = "我喝了！",       ["th"] = "ดื่มแล้ว!",
             },
         };
 
