@@ -1,4 +1,4 @@
-﻿/* === Photino message handler === */
+/* === Photino message handler === */
 window.external.receiveMessage(rawMsg => {
     const { type, payload } = JSON.parse(rawMsg);
     // Forward every incoming event to Action Flow's websocket-trigger router.
@@ -387,6 +387,9 @@ window.external.receiveMessage(rawMsg => {
                     const _e1 = document.getElementById('modal2FAError'); if (_e1) _e1.textContent = err;
                     const _e2 = document.getElementById('vrcQuickError'); if (_e2) _e2.textContent = err;
                     const _e3 = document.getElementById('reloginStatus'); if (_e3) _e3.textContent = err;
+                    if (payload.rateLimited && typeof handleLoginRateLimited === 'function') {
+                        handleLoginRateLimited(payload.retryAfterSec || 60);
+                    }
                 }
                 break;
             case 'vrcLoggedOut':

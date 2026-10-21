@@ -120,6 +120,11 @@ public sealed class VRChatWebSocketService : IDisposable
                     var (a, t) = _getTokens();
                     if (!string.IsNullOrEmpty(a))
                     {
+                        if (_authToken != a)
+                        {
+                            _consecutiveAuthFailures = 0;
+                            delaySec = 1;
+                        }
                         _authToken = a;
                         _tfaToken  = t ?? "";
                     }
@@ -128,6 +133,7 @@ public sealed class VRChatWebSocketService : IDisposable
             }
 
             _gotDataThisConn = false;
+            bool isAuthFailure = false;
 
             try
             {
@@ -157,8 +163,26 @@ public sealed class VRChatWebSocketService : IDisposable
                 try { await receiveTask; } catch { }
             }
             catch (OperationCanceledException) { break; }
+            catch (WebSocketException wsex)
+            {
+                var msg = wsex.Message;
+                if (msg.Contains("401") || msg.Contains("403") ||
+                    msg.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase) ||
+                    msg.Contains("Forbidden", StringComparison.OrdinalIgnoreCase))
+                {
+                    isAuthFailure = true;
+                }
+                ConnectError?.Invoke(this, wsex.Message);
+            }
             catch (Exception ex)
             {
+                var msg = ex.ToString();
+                if (msg.Contains("401") || msg.Contains("403") ||
+                    msg.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase) ||
+                    msg.Contains("Forbidden", StringComparison.OrdinalIgnoreCase))
+                {
+                    isAuthFailure = true;
+                }
                 ConnectError?.Invoke(this, ex.Message);
             }
 
@@ -173,9 +197,12 @@ public sealed class VRChatWebSocketService : IDisposable
             }
             else
             {
-                _consecutiveAuthFailures++;
-                if (_consecutiveAuthFailures == AuthFailureThreshold)
-                    AuthExpiredSuspected?.Invoke(this, EventArgs.Empty);
+                if (isAuthFailure)
+                {
+                    _consecutiveAuthFailures++;
+                    if (_consecutiveAuthFailures >= AuthFailureThreshold)
+                        AuthExpiredSuspected?.Invoke(this, EventArgs.Empty);
+                }
                 delaySec = Math.Min(delaySec * 2, 30);
             }
 

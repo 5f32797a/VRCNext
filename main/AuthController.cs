@@ -1,10 +1,11 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NativeFileDialogSharp;
 using VRCNext.Services;
 using VRCNext.Services.Helpers;
 using System.Diagnostics;
 using System.Net;
+using System.Net.NetworkInformation;
 
 namespace VRCNext;
 
@@ -22,6 +23,8 @@ public class AuthController
 
     // Auth State
     private string _pending2faType = "totp";
+    private string _pendingLoginUser = "";
+    private string _pendingLoginPass = "";
     private bool _vrcDebugSetup;
     private string _lastAvatarName = "";
     private string _lastVideoUrl = "";
@@ -29,6 +32,9 @@ public class AuthController
     private DateTime _readyAt = DateTime.MaxValue;
     private CancellationTokenSource? _refreshCts;
     private volatile bool _sessionExpiryHandled;
+    private readonly SemaphoreSlim _sessionRecoveryLock = new(1, 1);
+    private System.Threading.Timer? _networkChangeDebounce;
+    private DateTime _rateLimitedUntil = DateTime.MinValue;
 
     // In-flight guards — prevent duplicate startup fetches when JS triggers same requests
     private int _favWorldsInFlight = 0;
@@ -77,6 +83,8 @@ public class AuthController
             StartPeriodicRefresh();
             return Task.CompletedTask;
         };
+
+        SetupNetworkMonitoring();
     }
 
     // Invoke shim (Photino is thread-safe)
@@ -935,39 +943,60 @@ public class AuthController
     {
         SetupVrcDebugLog();
 
+        if (DateTime.UtcNow < _rateLimitedUntil)
+        {
+            var remainingSec = (int)(_rateLimitedUntil - DateTime.UtcNow).TotalSeconds;
+            _core.SendToJS("log", new { msg = $"VRChat: Rate limit active — resume paused ({remainingSec}s remaining)", color = "warn" });
+            return;
+        }
+
         var active = _core.Settings.ActiveAccount;
-        if (active != null && !string.IsNullOrEmpty(active.AuthCookie))
+        if (active != null && (!string.IsNullOrEmpty(active.AuthCookie) || !string.IsNullOrEmpty(active.Password)))
         {
             _core.SendToJS("log", new { msg = "VRChat: Resuming session...", color = "sec" });
             _core.VrcApi.RestoreCookies(active.AuthCookie, active.TwoFactorCookie);
 
-            var result = await _core.Auth.TryResumeSessionAsync();
-            if (result.Success && result.User != null)
+            if (!string.IsNullOrEmpty(active.AuthCookie))
             {
-                SendVrcUserData(result.User, loginFlow: true);
-                _core.SendToJS("log", new { msg = $"VRChat: Reconnected as {result.User["displayName"]}", color = "ok" });
-                SendAllCachedData();
-                await _friends.RefreshFriendsAsync();
-                _relayCtrl.StartWebSocket();
-                _ = TriggerStartupBackgroundRefreshAsync();
-                StartPeriodicRefresh();
-                return;
+                var result = await _core.Auth.TryResumeSessionAsync();
+                if (result.Success && result.User != null)
+                {
+                    _relayCtrl.ResetResumeRetryCount();
+                    SendVrcUserData(result.User, loginFlow: true);
+                    _core.SendToJS("log", new { msg = $"VRChat: Reconnected as {result.User["displayName"]}", color = "ok" });
+                    SendAllCachedData();
+                    await _friends.RefreshFriendsAsync();
+                    _relayCtrl.StartWebSocket();
+                    _ = TriggerStartupBackgroundRefreshAsync();
+                    StartPeriodicRefresh();
+                    return;
+                }
+
+                if (result.IsRateLimited)
+                {
+                    _rateLimitedUntil = DateTime.UtcNow.AddMinutes(5);
+                    _core.SendToJS("log", new { msg = "VRChat: HTTP 429 Rate limit detected — pausing automatic resume for 5 minutes", color = "err" });
+                    return;
+                }
+
+                if (result.NetworkError)
+                {
+                    _core.SendToJS("log", new { msg = $"VRChat: Network unavailable ({result.Error}) — cookies preserved, will retry", color = "warn" });
+                    _relayCtrl.ScheduleResumeRetry();
+                    return;
+                }
             }
 
-            if (result.NetworkError)
+            if (!string.IsNullOrEmpty(active.Username) && !string.IsNullOrEmpty(active.Password))
             {
-                // Network not ready (post-sleep, no internet) — keep cookies, retry later
-                _core.SendToJS("log", new { msg = $"VRChat: Network unavailable ({result.Error}) — cookies preserved, will retry", color = "warn" });
-                _relayCtrl.ScheduleResumeRetry();
-                return;
+                var recovered = await TryRecoverSessionAsync("Startup resume");
+                if (recovered) return;
             }
 
-            // auth failure w 401 or 403 or 2FA required.. clear invalid cookies on the active account
             await _core.AccountMutationLock.WaitAsync();
             try
             {
                 active.AuthCookie = "";
-                active.TwoFactorCookie = "";
                 _core.Settings.Save();
             }
             finally { _core.AccountMutationLock.Release(); }
@@ -991,6 +1020,17 @@ public class AuthController
         _core.SendToJS("log", new { msg = "VRChat: Logging in...", color = "sec" });
         _core.VrcApi.ResetSession();
         _sessionExpiryHandled = false;
+
+        _pendingLoginUser = username;
+        _pendingLoginPass = password;
+
+        var existingAcc = _core.Settings.Accounts.FirstOrDefault(a =>
+            string.Equals(a.Username, username, StringComparison.OrdinalIgnoreCase)) ?? _core.Settings.ActiveAccount;
+        if (!string.IsNullOrEmpty(existingAcc?.TwoFactorCookie))
+        {
+            _core.VrcApi.RestoreCookies(null, existingAcc.TwoFactorCookie);
+        }
+
         var result = await _core.Auth.LoginAsync(username, password);
         if (result.Requires2FA)
         {
@@ -1000,6 +1040,7 @@ public class AuthController
         }
         else if (result.Success && result.User != null)
         {
+            _relayCtrl.ResetResumeRetryCount();
             await _core.AccountMutationLock.WaitAsync();
             try
             {
@@ -1012,14 +1053,23 @@ public class AuthController
             }
             finally { _core.AccountMutationLock.Release(); }
 
+            _pendingLoginPass = "";
             _core.SendToJS("log", new { msg = $"VRChat: Logged in as {result.User["displayName"]}", color = "ok" });
             await _friends.RefreshFriendsAsync();
             _relayCtrl.StartWebSocket();
             _ = TriggerStartupBackgroundRefreshAsync();
             StartPeriodicRefresh();
         }
+        else if (result.IsRateLimited)
+        {
+            _pendingLoginPass = "";
+            _rateLimitedUntil = DateTime.UtcNow.AddMinutes(5);
+            _core.SendToJS("vrcLoginError", new { error = result.Error ?? "Rate limited by VRChat", rateLimited = true, retryAfterSec = 60 });
+            _core.SendToJS("log", new { msg = $"VRChat: {result.Error}", color = "err" });
+        }
         else
         {
+            _pendingLoginPass = "";
             _core.SendToJS("vrcLoginError", new { error = result.Error ?? "Login failed" });
             _core.SendToJS("log", new { msg = $"VRChat: {result.Error}", color = "err" });
         }
@@ -1034,13 +1084,19 @@ public class AuthController
             await _core.AccountMutationLock.WaitAsync();
             try
             {
-                _ = _core.Settings.ActiveAccount ?? _core.Settings.EnsurePrimaryAccount();
+                var acc = _core.Settings.ActiveAccount ?? _core.Settings.EnsurePrimaryAccount();
+                if (!string.IsNullOrEmpty(_pendingLoginUser))
+                    acc.Username = _pendingLoginUser;
+                if (!string.IsNullOrEmpty(_pendingLoginPass))
+                    acc.Password = _pendingLoginPass;
+
                 SaveVrcCookiesUnlocked();
                 _core.Settings.Save();
                 SendVrcUserDataUnlocked(result.User, loginFlow: true);
             }
             finally { _core.AccountMutationLock.Release(); }
 
+            _pendingLoginPass = "";
             _core.SendToJS("log", new { msg = $"VRChat: Logged in as {result.User["displayName"]}", color = "ok" });
             await _friends.RefreshFriendsAsync();
             _relayCtrl.StartWebSocket();
@@ -1077,8 +1133,8 @@ public class AuthController
                     }
                     else if (!result.NetworkError)
                     {
-                        Invoke(() => HandleSessionExpired("session refresh unauthorized"));
-                        break;
+                        var recovered = await TryRecoverSessionAsync("session refresh 401");
+                        if (!recovered) break;
                     }
                 }
             }
@@ -1093,8 +1149,121 @@ public class AuthController
         {
             var result = await _core.Auth.TryResumeSessionAsync();
             if (result.Success || result.NetworkError) return;
-            Invoke(() => HandleSessionExpired("WebSocket authentication failed"));
+            await TryRecoverSessionAsync("WebSocket auth expired");
         });
+    }
+
+    private async Task<bool> TryRecoverSessionAsync(string reason)
+    {
+        if (!await _sessionRecoveryLock.WaitAsync(0))
+        {
+            await _sessionRecoveryLock.WaitAsync();
+            _sessionRecoveryLock.Release();
+            return _core.VrcApi.IsLoggedIn;
+        }
+
+        try
+        {
+            var active = _core.Settings.ActiveAccount;
+            if (active == null || string.IsNullOrEmpty(active.Username) || string.IsNullOrEmpty(active.Password))
+            {
+                Invoke(() => HandleSessionExpired($"{reason} (No credentials stored)"));
+                return false;
+            }
+
+            _core.SendToJS("log", new { msg = $"VRChat: Session disconnected ({reason}) — attempting silent re-authentication...", color = "sec" });
+
+            var result = await _core.Auth.TrySilentReauthAsync(active.Username, active.Password, active.TwoFactorCookie);
+
+            if (result.Success && result.User != null)
+            {
+                await _core.AccountMutationLock.WaitAsync();
+                try
+                {
+                    SaveVrcCookiesUnlocked();
+                    _core.Settings.Save();
+                    SendVrcUserDataUnlocked(result.User, loginFlow: false);
+                }
+                finally { _core.AccountMutationLock.Release(); }
+
+                _sessionExpiryHandled = false;
+                _core.SendToJS("log", new { msg = $"VRChat: Session restored successfully as {result.User["displayName"]}", color = "ok" });
+
+                _relayCtrl.StartWebSocket();
+                _ = _friends.RefreshFriendsAsync();
+                return true;
+            }
+
+            if (result.Requires2FA)
+            {
+                _core.SendToJS("log", new { msg = "VRChat: 2FA verification expired (30-day limit) — please enter 2FA code", color = "warn" });
+                _pending2faType = result.TwoFactorType;
+                _core.SendToJS("vrcNeeds2FA", new { type = result.TwoFactorType });
+                return false;
+            }
+
+            if (result.IsRateLimited)
+            {
+                _rateLimitedUntil = DateTime.UtcNow.AddMinutes(5);
+                _core.SendToJS("log", new { msg = "VRChat: Re-auth hit rate limit (HTTP 429) — pausing automatic resume for 5 minutes", color = "err" });
+                return false;
+            }
+
+            if (result.NetworkError)
+            {
+                _core.SendToJS("log", new { msg = $"VRChat: Network unavailable during re-auth ({result.Error}) — preserving session, will retry", color = "warn" });
+                _relayCtrl.ScheduleResumeRetry();
+                return false;
+            }
+
+            Invoke(() => HandleSessionExpired($"{reason} ({result.Error ?? "Authentication failed"})"));
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _core.SendToJS("log", new { msg = $"VRChat: Re-auth exception — {ex.Message}", color = "err" });
+            return false;
+        }
+        finally
+        {
+            _sessionRecoveryLock.Release();
+        }
+    }
+
+    private void SetupNetworkMonitoring()
+    {
+        try
+        {
+            NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
+        }
+        catch (Exception ex)
+        {
+            _core.SendToJS("log", new { msg = $"Network monitor setup failed: {ex.Message}", color = "warn" });
+        }
+    }
+
+    private void OnNetworkAddressChanged(object? sender, EventArgs e)
+    {
+        if (!_core.VrcApi.IsLoggedIn) return;
+
+        _networkChangeDebounce?.Dispose();
+        _networkChangeDebounce = new System.Threading.Timer(async _ =>
+        {
+            if (!_core.VrcApi.IsLoggedIn) return;
+
+            try
+            {
+                var test = await _core.Auth.TryResumeSessionAsync();
+                if (test.Success) return;
+
+                if (!test.NetworkError)
+                {
+                    _core.SendToJS("log", new { msg = "VRChat: Network/IP change detected — refreshing session...", color = "sec" });
+                    await TryRecoverSessionAsync("Network/IP change");
+                }
+            }
+            catch { }
+        }, null, 2500, Timeout.Infinite);
     }
 
     private void HandleSessionExpired(string reason)
@@ -1115,7 +1284,6 @@ public class AuthController
             if (acc != null)
             {
                 acc.AuthCookie = "";
-                acc.TwoFactorCookie = "";
                 username = acc.Username ?? "";
                 password = acc.Password ?? "";
             }

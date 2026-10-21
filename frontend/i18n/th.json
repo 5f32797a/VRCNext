@@ -929,6 +929,7 @@
   "voicefight.block_words.desc": "ถูกตัดออกจากการจดจำ พิมพ์คำแล้วกด Enter",
   "voicefight.block_words.placeholder": "พิมพ์คำแล้วกด Enter...",
   "profiles.login.connecting": "กำลังเชื่อมต่อ...",
+  "profiles.login.rate_limited": "ถูกจำกัดอัตราคำขอจาก VRChat (กรุณารอ)",
   "profiles.login.enter_credentials": "กรอกชื่อผู้ใช้และรหัสผ่าน",
   "profiles.login.disconnected": "ยกเลิกการเชื่อมต่อแล้ว",
   "profiles.login.failed": "การเข้าสู่ระบบล้มเหลว",

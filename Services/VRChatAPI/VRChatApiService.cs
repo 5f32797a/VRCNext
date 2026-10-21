@@ -30,6 +30,7 @@ public class VRChatApiService
         public bool Success { get; set; }
         public bool Requires2FA { get; set; }
         public bool NetworkError { get; set; }
+        public bool IsRateLimited { get; set; }
         public string TwoFactorType { get; set; } = "";
         public string? Error { get; set; }
         public JObject? User { get; set; }
@@ -88,6 +89,16 @@ public class VRChatApiService
             _cookies.Add(uri, new Cookie("auth", authCookie, "/", ".vrchat.cloud"));
         if (!string.IsNullOrEmpty(twoFactorAuthCookie))
             _cookies.Add(uri, new Cookie("twoFactorAuth", twoFactorAuthCookie, "/", ".vrchat.cloud"));
+    }
+
+    public void ClearAuthCookie()
+    {
+        var uri = new Uri("https://api.vrchat.cloud");
+        _cookies.Add(uri, new Cookie("auth", "", "/", ".vrchat.cloud")
+        {
+            Expires = DateTime.Now.AddDays(-1),
+            Expired = true
+        });
     }
 
     public (string? auth, string? twoFactorAuth) GetCookies()

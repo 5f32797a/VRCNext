@@ -1,5 +1,36 @@
-﻿/* === VRChat API === */
+/* === VRChat API === */
+let _vrcLoginCooldownTimer = null;
+
+function handleLoginRateLimited(cooldownSec = 60) {
+    const btn = document.getElementById('vrcQuickLoginBtn');
+    const errEl = document.getElementById('vrcQuickError');
+    if (!errEl) return;
+
+    if (_vrcLoginCooldownTimer) clearInterval(_vrcLoginCooldownTimer);
+
+    let remaining = cooldownSec;
+    if (btn) btn.disabled = true;
+
+    const updateMsg = () => {
+        errEl.textContent = `${t('profiles.login.rate_limited', 'Rate limited by VRChat')}: ${remaining}s`;
+    };
+    updateMsg();
+
+    _vrcLoginCooldownTimer = setInterval(() => {
+        remaining--;
+        if (remaining <= 0) {
+            clearInterval(_vrcLoginCooldownTimer);
+            _vrcLoginCooldownTimer = null;
+            if (btn) btn.disabled = false;
+            errEl.textContent = '';
+        } else {
+            updateMsg();
+        }
+    }, 1000);
+}
+
 function vrcQuickLogin() {
+    if (_vrcLoginCooldownTimer) return;
     const u = document.getElementById('vrcQuickUser').value, p = document.getElementById('vrcQuickPass').value;
     if (!u || !p) return;
     document.getElementById('vrcQuickError').textContent = t('profiles.login.connecting', 'Connecting...');

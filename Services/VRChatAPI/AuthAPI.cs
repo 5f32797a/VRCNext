@@ -15,9 +15,14 @@ public class AuthAPI(VRChatApiService ctx)
             var body = await resp.Content.ReadAsStringAsync();
             ctx.Log($"Resume session response: {(int)resp.StatusCode}");
 
-            if (resp.StatusCode == HttpStatusCode.Unauthorized ||
-                resp.StatusCode == HttpStatusCode.Forbidden)
+            if (resp.StatusCode == HttpStatusCode.Unauthorized)
                 return new VRChatApiService.LoginResult { Error = "Session expired" };
+
+            if (resp.StatusCode == HttpStatusCode.Forbidden)
+                return new VRChatApiService.LoginResult { NetworkError = true, Error = "HTTP 403 (Access Restricted/Cloudflare)" };
+
+            if (resp.StatusCode == HttpStatusCode.TooManyRequests)
+                return new VRChatApiService.LoginResult { IsRateLimited = true, NetworkError = false, Error = "HTTP 429 (Too Many Requests / Rate Limited)" };
 
             if (!resp.IsSuccessStatusCode)
                 return new VRChatApiService.LoginResult { NetworkError = true, Error = $"HTTP {(int)resp.StatusCode}" };
@@ -25,7 +30,7 @@ public class AuthAPI(VRChatApiService ctx)
             var json = JObject.Parse(body);
 
             if (json["requiresTwoFactorAuth"] != null)
-                return new VRChatApiService.LoginResult { Error = "Session expired (2FA required)" };
+                return new VRChatApiService.LoginResult { Requires2FA = true, Error = "Session expired (2FA required)" };
 
             ctx.CurrentUserRaw = json;
             ctx.IsLoggedIn = true;
@@ -49,6 +54,16 @@ public class AuthAPI(VRChatApiService ctx)
         }
     }
 
+    public async Task<VRChatApiService.LoginResult> TrySilentReauthAsync(string username, string password, string? twoFactorCookie)
+    {
+        ctx.Log("Attempting silent re-authentication with stored credentials...");
+        ctx.ClearAuthCookie();
+        if (!string.IsNullOrEmpty(twoFactorCookie))
+            ctx.RestoreCookies(null, twoFactorCookie);
+
+        return await LoginAsync(username, password);
+    }
+
     public async Task<VRChatApiService.LoginResult> LoginAsync(string username, string password)
     {
         try
@@ -58,6 +73,7 @@ public class AuthAPI(VRChatApiService ctx)
 
             var req = new HttpRequestMessage(HttpMethod.Get, $"{VRChatApiService.BASE}/auth/user");
             req.Headers.TryAddWithoutValidation("Authorization", $"Basic {encoded}");
+            req.Headers.TryAddWithoutValidation(VRCNext.Services.Helpers.BackoffHandler.NoBackoffHeader, "1");
 
             var resp = await ctx._http.SendAsync(req);
             var body = await resp.Content.ReadAsStringAsync();
@@ -67,6 +83,15 @@ public class AuthAPI(VRChatApiService ctx)
 
             var cookies = ctx._cookies.GetCookies(new Uri("https://api.vrchat.cloud"));
             ctx.Log($"Cookies after login: {string.Join(", ", cookies.Cast<Cookie>().Select(c => $"{c.Name}={c.Value[..Math.Min(8, c.Value.Length)]}..."))}");
+
+            if (resp.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                return new VRChatApiService.LoginResult
+                {
+                    IsRateLimited = true,
+                    Error = "Rate limited by VRChat (HTTP 429). Please wait a few minutes before trying again."
+                };
+            }
 
             JObject json;
             try { json = JObject.Parse(body); }
@@ -87,13 +112,24 @@ public class AuthAPI(VRChatApiService ctx)
             if (!resp.IsSuccessStatusCode)
             {
                 var errMsg = json["error"]?["message"]?.ToString() ?? body[..Math.Min(100, body.Length)];
-                return new VRChatApiService.LoginResult { Error = errMsg };
+                var isTransient = (int)resp.StatusCode >= 500 || resp.StatusCode == HttpStatusCode.Forbidden;
+                return new VRChatApiService.LoginResult { NetworkError = isTransient, Error = errMsg };
             }
 
             ctx.CurrentUserRaw = json;
             ctx.IsLoggedIn = true;
             ctx.Log($"Logged in as: {json["displayName"]}  status: {json["status"]}");
             return new VRChatApiService.LoginResult { Success = true, User = json };
+        }
+        catch (HttpRequestException ex)
+        {
+            ctx.Log($"Login network error: {ex.Message}");
+            return new VRChatApiService.LoginResult { NetworkError = true, Error = ex.Message };
+        }
+        catch (TaskCanceledException ex)
+        {
+            ctx.Log($"Login timeout: {ex.Message}");
+            return new VRChatApiService.LoginResult { NetworkError = true, Error = "Request timed out" };
         }
         catch (Exception ex)
         {
@@ -112,13 +148,24 @@ public class AuthAPI(VRChatApiService ctx)
 
             var json = JsonConvert.SerializeObject(new Dictionary<string, string> { { "code", code } });
             var content = new StringContent(json, Encoding.UTF8, "application/json");
-            var resp = await ctx._http.PostAsync(endpoint, content);
+            var req = new HttpRequestMessage(HttpMethod.Post, endpoint) { Content = content };
+            req.Headers.TryAddWithoutValidation(VRCNext.Services.Helpers.BackoffHandler.NoBackoffHeader, "1");
+            var resp = await ctx._http.SendAsync(req);
             var body = await resp.Content.ReadAsStringAsync();
 
             ctx.Log($"2FA verify response: {(int)resp.StatusCode} body: {body}");
 
             var cookies = ctx._cookies.GetCookies(new Uri("https://api.vrchat.cloud"));
             ctx.Log($"Cookies after 2FA: {string.Join(", ", cookies.Cast<Cookie>().Select(c => $"{c.Name}={c.Value[..Math.Min(8, c.Value.Length)]}..."))}");
+
+            if (resp.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                return new VRChatApiService.LoginResult
+                {
+                    IsRateLimited = true,
+                    Error = "Rate limited by VRChat (HTTP 429). Please wait a few minutes before trying again."
+                };
+            }
 
             if (!resp.IsSuccessStatusCode)
                 return new VRChatApiService.LoginResult { Error = $"2FA failed ({(int)resp.StatusCode}): {body}" };
@@ -128,7 +175,9 @@ public class AuthAPI(VRChatApiService ctx)
                 return new VRChatApiService.LoginResult { Error = "2FA code invalid or expired" };
 
             await Task.Delay(300);
-            var userResp = await ctx._http.GetAsync($"{VRChatApiService.BASE}/auth/user");
+            var userReq = new HttpRequestMessage(HttpMethod.Get, $"{VRChatApiService.BASE}/auth/user");
+            userReq.Headers.TryAddWithoutValidation(VRCNext.Services.Helpers.BackoffHandler.NoBackoffHeader, "1");
+            var userResp = await ctx._http.SendAsync(userReq);
             var userBody = await userResp.Content.ReadAsStringAsync();
 
             ctx.Log($"Post-2FA user fetch: {(int)userResp.StatusCode}");
@@ -182,6 +231,15 @@ public class AuthAPI(VRChatApiService ctx)
                            methods.Contains("otp") ? "totp" :
                            methods.FirstOrDefault() ?? "totp";
                 return new VRChatApiService.LoginResult { Requires2FA = true, TwoFactorType = type };
+            }
+
+            if (resp.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                return new VRChatApiService.LoginResult
+                {
+                    IsRateLimited = true,
+                    Error = "Rate limited by VRChat (HTTP 429). Please wait a few minutes before trying again."
+                };
             }
 
             if (!resp.IsSuccessStatusCode)

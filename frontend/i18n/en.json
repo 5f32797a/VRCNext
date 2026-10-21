@@ -1,4 +1,4 @@
-﻿{
+{
   "nav.dashboard": "Dashboard",
   "nav.worlds": "Worlds",
   "nav.groups": "Groups",
@@ -929,6 +929,7 @@
   "voicefight.block_words.desc": "Stripped from recognition. Type a word and press Enter.",
   "voicefight.block_words.placeholder": "Type a word and press Enter...",
   "profiles.login.connecting": "Connecting...",
+  "profiles.login.rate_limited": "Rate limited by VRChat (please wait)",
   "profiles.login.enter_credentials": "Enter username and password",
   "profiles.login.disconnected": "Disconnected",
   "profiles.login.failed": "Login failed",

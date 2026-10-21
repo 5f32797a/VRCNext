@@ -116,10 +116,22 @@ public class RelayController : IDisposable
         }
     }
 
+    public void ResetResumeRetryCount() => _resumeRetryCount = 0;
+
     public void ScheduleResumeRetry()
     {
-        _resumeRetryCount = 0;
-        _ = Task.Run(async () => { await Task.Delay(8000); await TryResumeWithRetryAsync(); });
+        if (_resumeRetryCount >= MaxResumeRetries)
+        {
+            _core.SendToJS("log", new { msg = "[Wake] Maximum resume retries reached. Automatic resume halted.", color = "warn" });
+            return;
+        }
+
+        var delaySec = Math.Min(8 * (1 << _resumeRetryCount), 60);
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(delaySec));
+            await TryResumeWithRetryAsync();
+        });
     }
 
     private async Task TryResumeWithRetryAsync()
